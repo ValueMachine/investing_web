@@ -4,6 +4,13 @@ import { supabase } from "@/lib/supabase";
 import { getQuote } from "@/lib/finnhub";
 import { Loader2, TrendingUp, TrendingDown, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { 
+  Carousel, 
+  CarouselContent, 
+  CarouselItem, 
+  type CarouselApi 
+} from "@/components/ui/carousel";
+import { cn } from "@/lib/utils";
 
 interface Holding {
   symbol: string;
@@ -15,19 +22,25 @@ interface Holding {
   dailyPL: number;
 }
 
+const ITEMS_PER_PAGE = 5;
+
 export function Portfolio() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [totalValue, setTotalValue] = useState(0);
   const [totalDailyPL, setTotalDailyPL] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Carousel state
+  const [api, setApi] = useState<CarouselApi>();
+  const [current, setCurrent] = useState(0);
+  const [count, setCount] = useState(0);
 
   const fetchData = async () => {
     if (!supabase) return;
     setLoading(true);
     setError(null);
     try {
-      // 1. Get portfolio from Supabase
       const { data: portfolioData, error: dbError } = await supabase
         .from("portfolio")
         .select("*");
@@ -41,12 +54,10 @@ export function Portfolio() {
         return;
       }
 
-      // 2. Fetch quotes for each symbol
       const promises = portfolioData.map(async (item) => {
         const quote = await getQuote(item.symbol);
         if (!quote) return null;
 
-        // Finnhub quote: c = current, d = change, dp = percent change
         const price = quote.c;
         const change = quote.d;
         const changePercent = quote.dp;
@@ -65,7 +76,6 @@ export function Portfolio() {
       const results = await Promise.all(promises);
       const validHoldings = results.filter((h): h is Holding => h !== null);
 
-      // 3. Calculate totals
       const tValue = validHoldings.reduce((sum, h) => sum + h.value, 0);
       const tPL = validHoldings.reduce((sum, h) => sum + h.dailyPL, 0);
 
@@ -84,6 +94,17 @@ export function Portfolio() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    if (!api) return;
+
+    setCount(api.scrollSnapList().length);
+    setCurrent(api.selectedScrollSnap());
+
+    api.on("select", () => {
+      setCurrent(api.selectedScrollSnap());
+    });
+  }, [api, holdings]); // holdings changed -> api likely re-inited or pages changed
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -99,6 +120,12 @@ export function Portfolio() {
   const formatPL = (val: number) => {
     return `${val > 0 ? "+" : ""}${formatCurrency(val)}`;
   };
+
+  // Chunk holdings
+  const groupedHoldings: Holding[][] = [];
+  for (let i = 0; i < holdings.length; i += ITEMS_PER_PAGE) {
+    groupedHoldings.push(holdings.slice(i, i + ITEMS_PER_PAGE));
+  }
 
   return (
     <Card className="border-none shadow-lg bg-card/50 backdrop-blur-sm overflow-hidden">
@@ -128,27 +155,56 @@ export function Portfolio() {
           </div>
         </div>
 
-        <div className="space-y-3">
-          {holdings.map((h) => (
-            <div key={h.symbol} className="flex items-center justify-between p-3 rounded-lg border bg-background/50 hover:bg-background transition-colors">
-              <div>
-                <div className="font-bold text-lg">{h.symbol}</div>
-                <div className="text-xs text-muted-foreground">{h.shares} Shares</div>
+        {/* Carousel for pagination */}
+        {groupedHoldings.length > 0 ? (
+          <Carousel setApi={setApi} className="w-full">
+            <CarouselContent>
+              {groupedHoldings.map((group, groupIndex) => (
+                <CarouselItem key={groupIndex}>
+                  <div className="space-y-3">
+                    {group.map((h) => (
+                      <div key={h.symbol} className="flex items-center justify-between p-3 rounded-lg border bg-background/50 hover:bg-background transition-colors">
+                        <div>
+                          <div className="font-bold text-lg">{h.symbol}</div>
+                          <div className="text-xs text-muted-foreground">{h.shares} Shares</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-medium">{formatCurrency(h.value)}</div>
+                          <div className={`text-xs ${h.change >= 0 ? "text-green-500" : "text-red-500"}`}>
+                            {formatCurrency(h.price)} ({formatPercent(h.changePercent)})
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+            
+            {/* Dots Navigation */}
+            {count > 1 && (
+              <div className="flex justify-center gap-2 mt-4">
+                {Array.from({ length: count }).map((_, index) => (
+                  <button
+                    key={index}
+                    className={cn(
+                      "h-2 w-2 rounded-full transition-all",
+                      current === index ? "bg-primary w-4" : "bg-primary/20 hover:bg-primary/40"
+                    )}
+                    onClick={() => api?.scrollTo(index)}
+                    aria-label={`Go to page ${index + 1}`}
+                  />
+                ))}
               </div>
-              <div className="text-right">
-                <div className="font-medium">{formatCurrency(h.value)}</div>
-                <div className={`text-xs ${h.change >= 0 ? "text-green-500" : "text-red-500"}`}>
-                  {formatCurrency(h.price)} ({formatPercent(h.changePercent)})
-                </div>
-              </div>
-            </div>
-          ))}
-          {holdings.length === 0 && !loading && !error && (
+            )}
+          </Carousel>
+        ) : (
+          !loading && !error && (
             <div className="text-center py-8 text-muted-foreground text-sm">
               No holdings found. Add data to Supabase.
             </div>
-          )}
-        </div>
+          )
+        )}
       </CardContent>
     </Card>
   );
