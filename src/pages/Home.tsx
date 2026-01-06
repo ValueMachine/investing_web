@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
 import { ArrowRight, BarChart3, Calendar } from "lucide-react";
+import { Portfolio } from "@/components/Portfolio";
 import heroImg from "@/assets/hero.jpg";
 import summaryCover from "@/assets/summary-cover.jpg";
 import weeklyCover from "@/assets/weekly-cover.jpg";
@@ -24,7 +25,7 @@ export default function Home() {
             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
           </div>
           
-          <div className="container relative z-10 px-4 text-center">
+          <div className="container relative z-10 px-4 text-center pb-12">
             <h1 className="font-display text-5xl md:text-7xl font-bold mb-6 tracking-tight animate-in fade-in slide-in-from-bottom-4 duration-1000">
               在分化与共振中前行
             </h1>
@@ -44,6 +45,13 @@ export default function Home() {
                 </Button>
               </Link>
             </div>
+          </div>
+        </section>
+
+        {/* Portfolio Section */}
+        <section className="py-12 bg-muted/30">
+          <div className="container mx-auto px-4">
+            <Portfolio />
           </div>
         </section>
 
