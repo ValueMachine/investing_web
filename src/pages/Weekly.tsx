@@ -2,17 +2,24 @@ import { Navigation } from "@/components/Navigation";
 import { weeklyReviews as staticReviews, type WeeklyReview } from "@/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Streamdown } from "streamdown";
-import { Calendar as CalendarIcon, Search, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, Search, Loader2, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 import weeklyCover from "@/assets/weekly-cover.jpg";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export default function Weekly() {
   const [searchTerm, setSearchTerm] = useState("");
   const [reviews, setReviews] = useState<WeeklyReview[]>(staticReviews);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Lightbox state
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   useEffect(() => {
     const fetchReviews = async () => {
@@ -36,12 +43,9 @@ export default function Weekly() {
             title: item.title,
             date: item.date,
             content: item.content,
-            images: item.images // Support images from DB
+            images: item.images
           }));
           
-          // Merge logic: Combine DB reviews with static reviews
-          // Filter out static reviews that have the same ID as DB reviews to avoid duplicates
-          // Then sort everything by date descending
           const dbIds = new Set(dbReviews.map(r => r.id));
           const filteredStatic = staticReviews.filter(r => !dbIds.has(r.id));
           
@@ -60,6 +64,39 @@ export default function Weekly() {
 
     fetchReviews();
   }, []);
+
+  // Lightbox navigation
+  const openLightbox = (images: string[], index: number) => {
+    setLightboxImages(images);
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+    document.body.style.overflow = 'hidden'; // Prevent background scrolling
+  };
+
+  const closeLightbox = () => {
+    setLightboxOpen(false);
+    document.body.style.overflow = 'unset';
+  };
+
+  const nextImage = useCallback(() => {
+    setLightboxIndex((prev) => (prev + 1) % lightboxImages.length);
+  }, [lightboxImages.length]);
+
+  const prevImage = useCallback(() => {
+    setLightboxIndex((prev) => (prev - 1 + lightboxImages.length) % lightboxImages.length);
+  }, [lightboxImages.length]);
+
+  // Keyboard support for Lightbox
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!lightboxOpen) return;
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowRight') nextImage();
+      if (e.key === 'ArrowLeft') prevImage();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxOpen, nextImage, prevImage]);
   
   const filteredReviews = reviews.filter(review => 
     review.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -94,8 +131,8 @@ export default function Weekly() {
         <div className="container mx-auto px-4 max-w-6xl">
           <div className="flex flex-col md:flex-row gap-8">
             
-            {/* Sidebar / List */}
-            <aside className="w-full md:w-1/3 lg:w-1/4 space-y-6">
+            {/* Sidebar / List - Added shrink-0 to prevent squeezing */}
+            <aside className="w-full md:w-1/3 lg:w-1/4 space-y-6 shrink-0">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input 
@@ -120,7 +157,16 @@ export default function Weekly() {
                         e.preventDefault();
                         const el = document.getElementById(review.id);
                         if (el) {
-                          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          const offset = 80; // Header height + padding
+                          const bodyRect = document.body.getBoundingClientRect().top;
+                          const elementRect = el.getBoundingClientRect().top;
+                          const elementPosition = elementRect - bodyRect;
+                          const offsetPosition = elementPosition - offset;
+
+                          window.scrollTo({
+                            top: offsetPosition,
+                            behavior: "smooth"
+                          });
                         }
                       }}
                       className="block p-4 rounded-lg border bg-card hover:border-primary/50 transition-colors group cursor-pointer"
@@ -141,8 +187,8 @@ export default function Weekly() {
               </ScrollArea>
             </aside>
 
-            {/* Main Content Area */}
-            <div className="flex-1 space-y-12">
+            {/* Main Content Area - Added min-w-0 to handle flex child overflow properly */}
+            <div className="flex-1 space-y-12 min-w-0">
               {filteredReviews.map((review) => (
                 <section key={review.id} id={review.id} className="scroll-mt-24">
                   <Card className="overflow-hidden border-none shadow-sm">
@@ -156,35 +202,40 @@ export default function Weekly() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6 md:p-8">
-                      <div className="prose prose-neutral dark:prose-invert max-w-none leading-relaxed text-muted-foreground mb-6">
-                        <Streamdown>{review.content}</Streamdown>
-                      </div>
                       
-                      {/* Image Gallery */}
+                      {/* Image Gallery - Moved to top as requested */}
                       {review.images && review.images.length > 0 && (
-                        <div className="mt-8 space-y-3">
+                        <div className="mb-8 space-y-3">
                           <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            相关图表
+                            持仓Review
                           </h4>
                           <ScrollArea className="w-full whitespace-nowrap rounded-md border">
                             <div className="flex w-max space-x-4 p-4">
                               {review.images.map((img, index) => (
-                                <div key={index} className="overflow-hidden rounded-md border bg-muted/50">
+                                <div key={index} className="relative overflow-hidden rounded-md border bg-muted/50 group cursor-zoom-in">
                                   <img
                                     src={img}
                                     alt={`Review chart ${index + 1}`}
-                                    className="h-[300px] w-auto object-contain transition-transform hover:scale-105"
+                                    className="h-[300px] w-auto object-contain transition-transform group-hover:scale-105"
                                     loading="lazy"
+                                    onClick={() => openLightbox(review.images!, index)}
                                   />
+                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none" />
                                 </div>
                               ))}
                             </div>
+                            {/* Mobile hint */}
                             <div className="flex items-center justify-center pb-2 md:hidden">
                               <span className="text-xs text-muted-foreground">← 滑动查看更多 →</span>
                             </div>
                           </ScrollArea>
                         </div>
                       )}
+
+                      <div className="prose prose-neutral dark:prose-invert max-w-none leading-relaxed text-muted-foreground">
+                        <Streamdown>{review.content}</Streamdown>
+                      </div>
+                      
                     </CardContent>
                   </Card>
                 </section>
@@ -200,6 +251,50 @@ export default function Weekly() {
           </div>
         </div>
       </main>
+
+      {/* Lightbox Overlay */}
+      {lightboxOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center animate-in fade-in duration-200">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="absolute top-4 right-4 text-white/70 hover:text-white hover:bg-white/10 z-[110]"
+            onClick={closeLightbox}
+          >
+            <X className="w-8 h-8" />
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white hover:bg-white/10 h-12 w-12 z-[110]"
+            onClick={(e) => { e.stopPropagation(); prevImage(); }}
+          >
+            <ChevronLeft className="w-10 h-10" />
+          </Button>
+
+          <div className="relative w-full h-full p-12 flex items-center justify-center" onClick={closeLightbox}>
+            <img 
+              src={lightboxImages[lightboxIndex]} 
+              alt="Fullscreen view" 
+              className="max-w-full max-h-full object-contain select-none shadow-2xl"
+              onClick={(e) => e.stopPropagation()} // Prevent closing when clicking image
+            />
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/50 text-sm font-mono">
+              {lightboxIndex + 1} / {lightboxImages.length}
+            </div>
+          </div>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white hover:bg-white/10 h-12 w-12 z-[110]"
+            onClick={(e) => { e.stopPropagation(); nextImage(); }}
+          >
+            <ChevronRight className="w-10 h-10" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
