@@ -200,6 +200,33 @@ export default function Weekly() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6 md:p-8">
+                      {/* Image Gallery (Backup/Legacy Support) */}
+                      {review.images && review.images.length > 0 && (
+                        <div className="mb-8 space-y-3">
+                          <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            持仓Review (图集)
+                          </h4>
+                          <ScrollArea className="w-full whitespace-nowrap rounded-md border">
+                            <div className="flex w-max space-x-4 p-4">
+                              {review.images.map((img, index) => (
+                                <div key={index} className="relative overflow-hidden rounded-md border bg-muted/50 group cursor-zoom-in">
+                                  <img
+                                    src={img}
+                                    alt={`Review chart ${index + 1}`}
+                                    className="h-[300px] w-auto object-contain transition-transform group-hover:scale-105"
+                                    loading="lazy"
+                                    onClick={() => openLightbox(img)}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex items-center justify-center pb-2 md:hidden">
+                              <span className="text-xs text-muted-foreground">← 滑动查看更多 →</span>
+                            </div>
+                          </ScrollArea>
+                        </div>
+                      )}
+
                       <div className="prose prose-neutral dark:prose-invert max-w-none leading-relaxed text-muted-foreground">
                         <Streamdown components={{ img: CustomImage }}>
                           {review.content}
