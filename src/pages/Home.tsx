@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Link } from "wouter";
 import { ArrowRight, BarChart3, Calendar } from "lucide-react";
 import { Portfolio } from "@/components/Portfolio";
+import { ContactFooter } from "@/components/ContactFooter";
 import heroImg from "@/assets/hero.jpg";
 import summaryCover from "@/assets/summary-cover.jpg";
 import weeklyCover from "@/assets/weekly-cover.jpg";
@@ -129,12 +130,7 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="border-t py-12 bg-muted/30">
-        <div className="container mx-auto px-4 text-center text-muted-foreground">
-          <p className="font-display italic text-lg mb-4">"在分歧中上涨，在共振中前行"</p>
-          <p className="text-sm">© 2025 投资总结与每周复盘 | Designed with Editorial Insight</p>
-        </div>
-      </footer>
+      <ContactFooter />
     </div>
   );
 }
