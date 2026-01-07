@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
-import { getQuote } from "@/lib/finnhub";
+import { getQuote, getCompanyProfile } from "@/lib/finnhub";
 import { Loader2, TrendingUp, TrendingDown, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
@@ -21,6 +21,7 @@ interface Holding {
   changePercent: number;
   value: number;
   dailyPL: number;
+  industry?: string;
 }
 
 const ITEMS_PER_PAGE = 5;
@@ -30,6 +31,7 @@ export function Portfolio() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [totalValue, setTotalValue] = useState(0);
   const [totalDailyPL, setTotalDailyPL] = useState(0);
+  const [sectorAllocations, setSectorAllocations] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -52,17 +54,23 @@ export function Portfolio() {
         setHoldings([]);
         setTotalValue(0);
         setTotalDailyPL(0);
+        setSectorAllocations({});
         setLoading(false);
         return;
       }
 
-      const promises = portfolioData.map(async (item) => {
-        const quote = await getQuote(item.symbol);
+      const promises = portfolioData.map(async (item): Promise<Holding | null> => {
+        const [quote, profile] = await Promise.all([
+          getQuote(item.symbol),
+          getCompanyProfile(item.symbol)
+        ]);
+        
         if (!quote) return null;
 
         const price = quote.c;
         const change = quote.d;
         const changePercent = quote.dp;
+        const industry = profile?.finnhubIndustry || "Others";
         
         return {
           symbol: item.symbol,
@@ -72,6 +80,7 @@ export function Portfolio() {
           changePercent,
           value: price * item.shares,
           dailyPL: change * item.shares,
+          industry
         };
       });
 
@@ -84,9 +93,25 @@ export function Portfolio() {
       // Sort by value descending for better chart visualization
       validHoldings.sort((a, b) => b.value - a.value);
 
+      // Calculate sector allocation
+      const sectors: Record<string, number> = {};
+      validHoldings.forEach(h => {
+        const industry = h.industry || "Others";
+        sectors[industry] = (sectors[industry] || 0) + h.value;
+      });
+
+      // Normalize to percentages
+      const allocations: Record<string, number> = {};
+      for (const [sector, value] of Object.entries(sectors)) {
+        if (tValue > 0) {
+          allocations[sector] = (value / tValue) * 100;
+        }
+      }
+
       setHoldings(validHoldings);
       setTotalValue(tValue);
       setTotalDailyPL(tPL);
+      setSectorAllocations(allocations);
     } catch (err: any) {
       console.error("Portfolio fetch error:", err);
       setError("Failed to load portfolio data.");
@@ -138,6 +163,22 @@ export function Portfolio() {
     value: h.value
   }));
 
+  // Custom Tooltip for PieChart
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      const percent = totalValue > 0 ? (data.value / totalValue) * 100 : 0;
+      return (
+        <div className="bg-background/95 backdrop-blur-sm border rounded-lg shadow-lg p-3 text-sm">
+          <div className="font-bold mb-1">{data.name}</div>
+          <div className="text-muted-foreground">Market Value: <span className="text-foreground font-mono">{formatCurrency(data.value)}</span></div>
+          <div className="text-muted-foreground">Portfolio: <span className="text-foreground font-mono">{percent.toFixed(2)}%</span></div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <Card className="border-none shadow-lg bg-card/50 backdrop-blur-sm overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -153,35 +194,51 @@ export function Portfolio() {
         {error && <div className="text-destructive text-sm mb-4">{error}</div>}
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column: Pie Chart */}
-          <div className="lg:col-span-1 h-[300px] w-full flex items-center justify-center">
-            {holdings.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={chartData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          {/* Left Column: Pie Chart & Allocation */}
+          <div className="lg:col-span-1 flex flex-col gap-6">
+            <div className="h-[300px] w-full flex items-center justify-center">
+              {holdings.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={chartData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  Chart Data Loading...
+                </div>
+              )}
+            </div>
+
+            {/* Asset Classification Text */}
+            {Object.keys(sectorAllocations).length > 0 && (
+              <div className="bg-muted/30 rounded-lg p-4 text-sm">
+                <div className="font-semibold mb-2 text-muted-foreground uppercase tracking-wider">Asset Allocation</div>
+                <div className="space-y-1">
+                  {Object.entries(sectorAllocations)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([sector, percent]) => (
+                      <div key={sector} className="flex justify-between items-center">
+                        <span className="text-muted-foreground truncate mr-2" title={sector}>{sector}</span>
+                        <span className="font-mono font-medium">{percent.toFixed(1)}%</span>
+                      </div>
                     ))}
-                  </Pie>
-                  <Tooltip 
-                    formatter={(value: number) => formatCurrency(value)}
-                    contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                  />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                Chart Data Loading...
+                </div>
               </div>
             )}
           </div>
@@ -213,7 +270,12 @@ export function Portfolio() {
                         {group.map((h) => (
                           <div key={h.symbol} className="flex items-center justify-between p-3 rounded-lg border bg-background/50 hover:bg-background transition-colors">
                             <div>
-                              <div className="font-bold text-lg">{h.symbol}</div>
+                              <div className="font-bold text-lg flex items-center gap-2">
+                                {h.symbol}
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-normal">
+                                  {h.industry}
+                                </span>
+                              </div>
                               <div className="text-xs text-muted-foreground">{h.shares} Shares</div>
                             </div>
                             <div className="text-right">
