@@ -1,5 +1,4 @@
 import { Navigation } from "@/components/Navigation";
-import { investmentSummary } from "@/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState, useEffect, useCallback } from "react";
@@ -10,7 +9,6 @@ import { supabase } from "@/lib/supabase";
 import summaryCover from "@/assets/summary-cover.jpg";
 import { Button } from "@/components/ui/button";
 
-// Reusing types from Weekly but adapted for Summary context
 interface Report {
   id: string;
   title: string;
@@ -21,21 +19,12 @@ interface Report {
 
 export default function Summary() {
   const [searchTerm, setSearchTerm] = useState("");
-  // Convert the existing static summary to the new list format
-  const staticReport: Report = {
-    id: "2025-annual-static",
-    title: investmentSummary.title,
-    date: "2025-12-31",
-    content: investmentSummary.sections.map(s => `## ${s.title}\n\n${s.content}`).join("\n\n")
-  };
-  
-  const [reports, setReports] = useState<Report[]>([staticReport]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Lightbox state (copied from Weekly.tsx)
+  // Lightbox state
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [lightboxImages, setLightboxImages] = useState<string[]>([]);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [lightboxSrc, setLightboxSrc] = useState("");
 
   useEffect(() => {
     const fetchReports = async () => {
@@ -43,7 +32,6 @@ export default function Summary() {
       
       try {
         setIsLoading(true);
-        // Fetch from the new 'annual_reports' table
         const { data, error } = await supabase
           .from('annual_reports')
           .select('*')
@@ -62,12 +50,7 @@ export default function Summary() {
             content: item.content,
             images: item.images
           }));
-          
-          // Merge with static report (if not duplicated by ID or similar key)
-          // Here we just prepend dbReports to static for now, or replace if DB covers it.
-          // Let's keep the static one as a fallback/historical record unless overwritten.
-          
-          setReports([...dbReports, staticReport]); 
+          setReports(dbReports); 
         }
       } catch (err) {
         console.error('Failed to fetch reports:', err);
@@ -80,9 +63,8 @@ export default function Summary() {
   }, []);
 
   // Lightbox logic
-  const openLightbox = (images: string[], index: number) => {
-    setLightboxImages(images);
-    setLightboxIndex(index);
+  const openLightbox = (src: string) => {
+    setLightboxSrc(src);
     setLightboxOpen(true);
     document.body.style.overflow = 'hidden';
   };
@@ -92,24 +74,25 @@ export default function Summary() {
     document.body.style.overflow = 'unset';
   };
 
-  const nextImage = useCallback(() => {
-    setLightboxIndex((prev) => (prev + 1) % lightboxImages.length);
-  }, [lightboxImages.length]);
-
-  const prevImage = useCallback(() => {
-    setLightboxIndex((prev) => (prev - 1 + lightboxImages.length) % lightboxImages.length);
-  }, [lightboxImages.length]);
+  // Custom Image Component for Streamdown
+  const CustomImage = (props: any) => {
+    return (
+      <img
+        {...props}
+        className="rounded-lg shadow-md my-6 max-w-full h-auto cursor-zoom-in hover:opacity-95 transition-opacity"
+        onClick={() => openLightbox(props.src)}
+      />
+    );
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!lightboxOpen) return;
       if (e.key === 'Escape') closeLightbox();
-      if (e.key === 'ArrowRight') nextImage();
-      if (e.key === 'ArrowLeft') prevImage();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxOpen, nextImage, prevImage]);
+  }, [lightboxOpen]);
 
   const filteredReports = reports.filter(report => 
     report.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -211,36 +194,10 @@ export default function Summary() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-6 md:p-8">
-                      
-                      {/* Images */}
-                      {report.images && report.images.length > 0 && (
-                        <div className="mb-8 space-y-3">
-                          <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            年度图表
-                          </h4>
-                          <ScrollArea className="w-full whitespace-nowrap rounded-md border">
-                            <div className="flex w-max space-x-4 p-4">
-                              {report.images.map((img, index) => (
-                                <div key={index} className="relative overflow-hidden rounded-md border bg-muted/50 group cursor-zoom-in">
-                                  <img
-                                    src={img}
-                                    alt={`Report chart ${index + 1}`}
-                                    className="h-[300px] w-auto object-contain transition-transform group-hover:scale-105"
-                                    loading="lazy"
-                                    onClick={() => openLightbox(report.images!, index)}
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                            <div className="flex items-center justify-center pb-2 md:hidden">
-                              <span className="text-xs text-muted-foreground">← 滑动查看更多 →</span>
-                            </div>
-                          </ScrollArea>
-                        </div>
-                      )}
-
                       <div className="prose prose-neutral dark:prose-invert max-w-none leading-relaxed text-muted-foreground">
-                        <Streamdown>{report.content}</Streamdown>
+                        <Streamdown components={{ img: CustomImage }}>
+                          {report.content}
+                        </Streamdown>
                       </div>
                     </CardContent>
                   </Card>
@@ -260,7 +217,10 @@ export default function Summary() {
 
       {/* Lightbox Overlay */}
       {lightboxOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center animate-in fade-in duration-200">
+        <div 
+          className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-sm flex items-center justify-center animate-in fade-in duration-200"
+          onClick={closeLightbox}
+        >
           <Button 
             variant="ghost" 
             size="icon" 
@@ -270,35 +230,14 @@ export default function Summary() {
             <X className="w-8 h-8" />
           </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white hover:bg-white/10 h-12 w-12 z-[110]"
-            onClick={(e) => { e.stopPropagation(); prevImage(); }}
-          >
-            <ChevronLeft className="w-10 h-10" />
-          </Button>
-
-          <div className="relative w-full h-full p-12 flex items-center justify-center" onClick={closeLightbox}>
+          <div className="relative w-full h-full p-12 flex items-center justify-center">
             <img 
-              src={lightboxImages[lightboxIndex]} 
+              src={lightboxSrc} 
               alt="Fullscreen view" 
               className="max-w-full max-h-full object-contain select-none shadow-2xl"
               onClick={(e) => e.stopPropagation()} 
             />
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-white/50 text-sm font-mono">
-              {lightboxIndex + 1} / {lightboxImages.length}
-            </div>
           </div>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/70 hover:text-white hover:bg-white/10 h-12 w-12 z-[110]"
-            onClick={(e) => { e.stopPropagation(); nextImage(); }}
-          >
-            <ChevronRight className="w-10 h-10" />
-          </Button>
         </div>
       )}
     </div>
