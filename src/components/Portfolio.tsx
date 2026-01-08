@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import { getQuote, getCompanyProfile } from "@/lib/finnhub";
-import { Loader2, TrendingUp, TrendingDown, RefreshCcw } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, RefreshCcw, Settings, Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
   Carousel, 
@@ -12,8 +12,19 @@ import {
 } from "@/components/ui/carousel";
 import { cn } from "@/lib/utils";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface Holding {
+  id: string;
   symbol: string;
   shares: number;
   price: number;
@@ -40,6 +51,12 @@ export function Portfolio() {
   const [current, setCurrent] = useState(0);
   const [count, setCount] = useState(0);
 
+  // Management state
+  const [isManageOpen, setIsManageOpen] = useState(false);
+  const [newSymbol, setNewSymbol] = useState("");
+  const [newShares, setNewShares] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const fetchData = async () => {
     if (!supabase) return;
     setLoading(true);
@@ -47,7 +64,8 @@ export function Portfolio() {
     try {
       const { data: portfolioData, error: dbError } = await supabase
         .from("portfolio")
-        .select("*");
+        .select("*")
+        .order("symbol");
 
       if (dbError) throw dbError;
       if (!portfolioData || portfolioData.length === 0) {
@@ -73,6 +91,7 @@ export function Portfolio() {
         const industry = profile?.finnhubIndustry || "Others";
         
         return {
+          id: item.id,
           symbol: item.symbol,
           shares: item.shares,
           price,
@@ -135,6 +154,47 @@ export function Portfolio() {
     });
   }, [api, holdings]);
 
+  // Management Handlers
+  const handleAdd = async () => {
+    if (!supabase || !newSymbol || !newShares) return;
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.from("portfolio").insert([
+        { symbol: newSymbol.toUpperCase(), shares: Number(newShares) }
+      ]);
+      if (error) throw error;
+      setNewSymbol("");
+      setNewShares("");
+      fetchData();
+    } catch (err) {
+      console.error("Error adding holding:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.from("portfolio").delete().eq("id", id);
+      if (error) throw error;
+      fetchData();
+    } catch (err) {
+      console.error("Error deleting holding:", err);
+    }
+  };
+
+  const handleUpdateShares = async (id: string, newShares: number) => {
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.from("portfolio").update({ shares: newShares }).eq("id", id);
+      if (error) throw error;
+      fetchData();
+    } catch (err) {
+      console.error("Error updating shares:", err);
+    }
+  };
+
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -185,9 +245,98 @@ export function Portfolio() {
         <CardTitle className="font-display text-2xl text-primary">
           Investment Portfolio
         </CardTitle>
-        <Button variant="ghost" size="icon" onClick={fetchData} disabled={loading}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-        </Button>
+        <div className="flex gap-2">
+          <Dialog open={isManageOpen} onOpenChange={setIsManageOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Settings className="h-4 w-4" />
+                Manage
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Manage Holdings</DialogTitle>
+                <DialogDescription>
+                  Add, remove, or update your portfolio positions.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-6 py-4">
+                {/* Add New Form */}
+                <div className="grid grid-cols-7 gap-4 items-end bg-muted/30 p-4 rounded-lg">
+                  <div className="col-span-3 space-y-2">
+                    <Label htmlFor="symbol">Symbol</Label>
+                    <Input 
+                      id="symbol" 
+                      placeholder="e.g. AAPL" 
+                      value={newSymbol}
+                      onChange={(e) => setNewSymbol(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-3 space-y-2">
+                    <Label htmlFor="shares">Shares</Label>
+                    <Input 
+                      id="shares" 
+                      type="number" 
+                      placeholder="0" 
+                      value={newShares}
+                      onChange={(e) => setNewShares(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-1">
+                    <Button onClick={handleAdd} disabled={isSubmitting || !newSymbol || !newShares} className="w-full">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Holdings List */}
+                <div className="space-y-2">
+                  <Label>Current Holdings</Label>
+                  <div className="border rounded-md divide-y">
+                    {holdings.map((h) => (
+                      <div key={h.id} className="grid grid-cols-7 gap-4 p-3 items-center">
+                        <div className="col-span-3 font-bold">{h.symbol}</div>
+                        <div className="col-span-3">
+                          <Input 
+                            type="number" 
+                            defaultValue={h.shares}
+                            className="h-8"
+                            onBlur={(e) => {
+                              const val = parseFloat(e.target.value);
+                              if (val !== h.shares && !isNaN(val)) {
+                                handleUpdateShares(h.id, val);
+                              }
+                            }}
+                          />
+                        </div>
+                        <div className="col-span-1 flex justify-end">
+                          <Button 
+                            variant="destructive" 
+                            size="icon" 
+                            className="h-8 w-8"
+                            onClick={() => handleDelete(h.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {holdings.length === 0 && (
+                      <div className="p-4 text-center text-sm text-muted-foreground">
+                        No holdings yet. Add one above.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Button variant="ghost" size="icon" onClick={fetchData} disabled={loading}>
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+          </Button>
+        </div>
       </CardHeader>
       
       <CardContent>
