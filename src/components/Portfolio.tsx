@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
 import { getQuote, getCompanyProfile } from "@/lib/finnhub";
-import { Loader2, TrendingUp, TrendingDown, RefreshCcw, Settings, Trash2, Plus } from "lucide-react";
+import { Loader2, TrendingUp, TrendingDown, RefreshCcw, Settings, Trash2, Plus, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
   Carousel, 
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 interface Holding {
   id: string;
@@ -56,6 +57,11 @@ export function Portfolio() {
   const [newSymbol, setNewSymbol] = useState("");
   const [newShares, setNewShares] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState("");
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
 
   const fetchData = async () => {
     if (!supabase) return;
@@ -154,6 +160,34 @@ export function Portfolio() {
     });
   }, [api, holdings]);
 
+  // Auth Handler
+  const handleAuth = () => {
+    const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD;
+    
+    if (!adminPassword) {
+      toast.error("Admin password not configured in environment variables.");
+      return;
+    }
+
+    if (password === adminPassword) {
+      setIsAuthenticated(true);
+      setShowPasswordDialog(false);
+      setIsManageOpen(true);
+      setPassword("");
+      toast.success("Access granted");
+    } else {
+      toast.error("Incorrect password");
+    }
+  };
+
+  const handleManageClick = () => {
+    if (isAuthenticated) {
+      setIsManageOpen(true);
+    } else {
+      setShowPasswordDialog(true);
+    }
+  };
+
   // Management Handlers
   const handleAdd = async () => {
     if (!supabase || !newSymbol || !newShares) return;
@@ -166,8 +200,10 @@ export function Portfolio() {
       setNewSymbol("");
       setNewShares("");
       fetchData();
+      toast.success("Holding added");
     } catch (err) {
       console.error("Error adding holding:", err);
+      toast.error("Failed to add holding");
     } finally {
       setIsSubmitting(false);
     }
@@ -179,8 +215,10 @@ export function Portfolio() {
       const { error } = await supabase.from("portfolio").delete().eq("id", id);
       if (error) throw error;
       fetchData();
+      toast.success("Holding removed");
     } catch (err) {
       console.error("Error deleting holding:", err);
+      toast.error("Failed to remove holding");
     }
   };
 
@@ -190,8 +228,10 @@ export function Portfolio() {
       const { error } = await supabase.from("portfolio").update({ shares: newShares }).eq("id", id);
       if (error) throw error;
       fetchData();
+      toast.success("Shares updated");
     } catch (err) {
       console.error("Error updating shares:", err);
+      toast.error("Failed to update shares");
     }
   };
 
@@ -246,91 +286,123 @@ export function Portfolio() {
           Investment Portfolio
         </CardTitle>
         <div className="flex gap-2">
-          <Dialog open={isManageOpen} onOpenChange={setIsManageOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Settings className="h-4 w-4" />
-                Manage
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          {/* Password Dialog */}
+          <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+            <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Manage Holdings</DialogTitle>
+                <DialogTitle>Admin Access</DialogTitle>
                 <DialogDescription>
-                  Add, remove, or update your portfolio positions.
+                  Please enter the admin password to manage holdings.
                 </DialogDescription>
               </DialogHeader>
-              
-              <div className="space-y-6 py-4">
-                {/* Add New Form */}
-                <div className="grid grid-cols-7 gap-4 items-end bg-muted/30 p-4 rounded-lg">
-                  <div className="col-span-3 space-y-2">
-                    <Label htmlFor="symbol">Symbol</Label>
-                    <Input 
-                      id="symbol" 
-                      placeholder="e.g. AAPL" 
-                      value={newSymbol}
-                      onChange={(e) => setNewSymbol(e.target.value)}
-                    />
-                  </div>
-                  <div className="col-span-3 space-y-2">
-                    <Label htmlFor="shares">Shares</Label>
-                    <Input 
-                      id="shares" 
-                      type="number" 
-                      placeholder="0" 
-                      value={newShares}
-                      onChange={(e) => setNewShares(e.target.value)}
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    <Button onClick={handleAdd} disabled={isSubmitting || !newSymbol || !newShares} className="w-full">
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
+              <div className="flex items-center space-x-2 py-4">
+                <div className="grid flex-1 gap-2">
+                  <Label htmlFor="password" className="sr-only">
+                    Password
+                  </Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                  />
                 </div>
-
-                {/* Holdings List */}
-                <div className="space-y-2">
-                  <Label>Current Holdings</Label>
-                  <div className="border rounded-md divide-y">
-                    {holdings.map((h) => (
-                      <div key={h.id} className="grid grid-cols-7 gap-4 p-3 items-center">
-                        <div className="col-span-3 font-bold">{h.symbol}</div>
-                        <div className="col-span-3">
-                          <Input 
-                            type="number" 
-                            defaultValue={h.shares}
-                            className="h-8"
-                            onBlur={(e) => {
-                              const val = parseFloat(e.target.value);
-                              if (val !== h.shares && !isNaN(val)) {
-                                handleUpdateShares(h.id, val);
-                              }
-                            }}
-                          />
-                        </div>
-                        <div className="col-span-1 flex justify-end">
-                          <Button 
-                            variant="destructive" 
-                            size="icon" 
-                            className="h-8 w-8"
-                            onClick={() => handleDelete(h.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                    {holdings.length === 0 && (
-                      <div className="p-4 text-center text-sm text-muted-foreground">
-                        No holdings yet. Add one above.
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <Button type="submit" size="sm" className="px-3" onClick={handleAuth}>
+                  <Lock className="h-4 w-4" />
+                </Button>
               </div>
             </DialogContent>
+          </Dialog>
+
+          {/* Management Dialog */}
+          <Dialog open={isManageOpen} onOpenChange={setIsManageOpen}>
+            <Button variant="outline" size="sm" className="gap-2" onClick={handleManageClick}>
+              <Settings className="h-4 w-4" />
+              Manage
+            </Button>
+            
+            {isAuthenticated && (
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Manage Holdings</DialogTitle>
+                  <DialogDescription>
+                    Add, remove, or update your portfolio positions.
+                  </DialogDescription>
+                </DialogHeader>
+                
+                <div className="space-y-6 py-4">
+                  {/* Add New Form */}
+                  <div className="grid grid-cols-7 gap-4 items-end bg-muted/30 p-4 rounded-lg">
+                    <div className="col-span-3 space-y-2">
+                      <Label htmlFor="symbol">Symbol</Label>
+                      <Input 
+                        id="symbol" 
+                        placeholder="e.g. AAPL" 
+                        value={newSymbol}
+                        onChange={(e) => setNewSymbol(e.target.value)}
+                      />
+                    </div>
+                    <div className="col-span-3 space-y-2">
+                      <Label htmlFor="shares">Shares</Label>
+                      <Input 
+                        id="shares" 
+                        type="number" 
+                        placeholder="0" 
+                        value={newShares}
+                        onChange={(e) => setNewShares(e.target.value)}
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <Button onClick={handleAdd} disabled={isSubmitting || !newSymbol || !newShares} className="w-full">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Holdings List */}
+                  <div className="space-y-2">
+                    <Label>Current Holdings</Label>
+                    <div className="border rounded-md divide-y">
+                      {holdings.map((h) => (
+                        <div key={h.id} className="grid grid-cols-7 gap-4 p-3 items-center">
+                          <div className="col-span-3 font-bold">{h.symbol}</div>
+                          <div className="col-span-3">
+                            <Input 
+                              type="number" 
+                              defaultValue={h.shares}
+                              className="h-8"
+                              onBlur={(e) => {
+                                const val = parseFloat(e.target.value);
+                                if (val !== h.shares && !isNaN(val)) {
+                                  handleUpdateShares(h.id, val);
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="col-span-1 flex justify-end">
+                            <Button 
+                              variant="destructive" 
+                              size="icon" 
+                              className="h-8 w-8"
+                              onClick={() => handleDelete(h.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                      {holdings.length === 0 && (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          No holdings yet. Add one above.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            )}
           </Dialog>
 
           <Button variant="ghost" size="icon" onClick={fetchData} disabled={loading}>

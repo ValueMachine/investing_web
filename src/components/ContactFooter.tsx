@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Phone, Mail, MessageCircle, QrCode } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { 
+  HoverCard, 
+  HoverCardContent, 
+  HoverCardTrigger 
+} from "@/components/ui/hover-card";
 import { Button } from "@/components/ui/button";
 
 interface Contact {
@@ -52,22 +56,22 @@ export function ContactFooter() {
           {contacts.map((contact) => (
             <div key={contact.id} className="flex items-center">
               {contact.image_url ? (
-                // QR Code Types (WeChat, Official Account)
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="ghost" className="flex items-center gap-2 hover:text-primary transition-colors">
+                // QR Code Types (WeChat, Official Account) - Using HoverCard
+                <HoverCard openDelay={0} closeDelay={0}>
+                  <HoverCardTrigger asChild>
+                    <Button variant="ghost" className="flex items-center gap-2 hover:text-primary transition-colors cursor-default">
                       {getIcon(contact.type)}
                       <span>{contact.label}</span>
                     </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-48 p-0 border-none shadow-lg">
+                  </HoverCardTrigger>
+                  <HoverCardContent className="w-48 p-0 border-none shadow-lg">
                     <img 
                       src={contact.image_url} 
                       alt={contact.label}
                       className="w-full h-auto rounded-lg"
                     />
-                  </PopoverContent>
-                </Popover>
+                  </HoverCardContent>
+                </HoverCard>
               ) : (
                 // Text Types (Phone, Email)
                 <a 
